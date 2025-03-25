@@ -7,6 +7,7 @@ import pyodbc
 from datetime import datetime
 import uuid
 from azure.storage.blob import BlobServiceClient
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
 app = func.FunctionApp()
 
@@ -20,6 +21,7 @@ AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION")
 SQL_CONNECTION_STRING = os.getenv("SQL_CONNECTION_STRING")
 
 # Azure Blob Storage configuration
+STORAGE_CONNECTION_URL = os.getenv("STORAGE_CONNECTION_URL")
 STORAGE_CONNECTION_STRING = os.getenv("STORAGE_CONNECTION_STRING")
 STORAGE_CONTAINER_NAME = os.getenv("STORAGE_CONTAINER_NAME")  # Ensure this container exists
 
@@ -35,13 +37,25 @@ if not STORAGE_CONNECTION_STRING:
     logging.error("Storage connection string is missing.")
     raise ValueError("Storage configuration is incomplete.")
 
+# Initialize Azure OpenAI Service client with Entra ID authentication
+token_provider = get_bearer_token_provider(  
+    DefaultAzureCredential(),  
+    "https://cognitiveservices.azure.com/.default"  
+)  
+
 client = AzureOpenAI(
     azure_endpoint=AZURE_OPENAI_ENDPOINT,
-    api_key=AZURE_OPENAI_API_KEY,
+    azure_ad_token_provider=token_provider, 
+#    api_key=AZURE_OPENAI_API_KEY,
     api_version=AZURE_OPENAI_API_VERSION
 )
 
-blob_service_client = BlobServiceClient.from_connection_string(STORAGE_CONNECTION_STRING)
+token_credential = DefaultAzureCredential()
+blob_service_client = BlobServiceClient(
+    account_url="https://<my_account_name>.blob.core.windows.net",
+    credential=token_credential
+)
+
 
 @app.route(route="processComplaint", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
 def process_complaint(req: func.HttpRequest) -> func.HttpResponse:
