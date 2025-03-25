@@ -13,7 +13,7 @@ app = func.FunctionApp()
 
 # Azure OpenAI configuration
 AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
-AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
+#AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
 AZURE_OPENAI_DEPLOYMENT = os.getenv("AZURE_OPENAI_DEPLOYMENT")
 AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION")
 
@@ -22,10 +22,10 @@ SQL_CONNECTION_STRING = os.getenv("SQL_CONNECTION_STRING")
 
 # Azure Blob Storage configuration
 STORAGE_CONNECTION_URL = os.getenv("STORAGE_CONNECTION_URL")
-STORAGE_CONNECTION_STRING = os.getenv("STORAGE_CONNECTION_STRING")
+#STORAGE_CONNECTION_STRING = os.getenv("STORAGE_CONNECTION_STRING")
 STORAGE_CONTAINER_NAME = os.getenv("STORAGE_CONTAINER_NAME")  # Ensure this container exists
 
-if not all([AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_DEPLOYMENT]):
+if not all([AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT]):
     logging.error("Azure OpenAI configuration is missing.")
     raise ValueError("Azure OpenAI configuration is incomplete.")
 
@@ -33,8 +33,8 @@ if not SQL_CONNECTION_STRING:
     logging.error("SQL connection string is missing.")
     raise ValueError("SQL configuration is incomplete.")
 
-if not STORAGE_CONNECTION_STRING:
-    logging.error("Storage connection string is missing.")
+if not STORAGE_CONNECTION_URL:
+    logging.error("Storage connection URL is missing.")
     raise ValueError("Storage configuration is incomplete.")
 
 # Initialize Azure OpenAI Service client with Entra ID authentication
@@ -52,7 +52,7 @@ client = AzureOpenAI(
 
 token_credential = DefaultAzureCredential()
 blob_service_client = BlobServiceClient(
-    account_url="https://<my_account_name>.blob.core.windows.net",
+    account_url=STORAGE_CONNECTION_URL,
     credential=token_credential
 )
 
