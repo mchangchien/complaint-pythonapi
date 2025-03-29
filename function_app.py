@@ -13,7 +13,6 @@ app = func.FunctionApp()
 
 # Azure OpenAI configuration
 AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
-#AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
 AZURE_OPENAI_DEPLOYMENT = os.getenv("AZURE_OPENAI_DEPLOYMENT")
 AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION")
 
@@ -22,31 +21,26 @@ SQL_CONNECTION_STRING = os.getenv("SQL_CONNECTION_STRING")
 
 # Azure Blob Storage configuration
 STORAGE_CONNECTION_URL = os.getenv("STORAGE_CONNECTION_URL")
-#STORAGE_CONNECTION_STRING = os.getenv("STORAGE_CONNECTION_STRING")
-STORAGE_CONTAINER_NAME = os.getenv("STORAGE_CONTAINER_NAME")  # Ensure this container exists
+STORAGE_CONTAINER_NAME = os.getenv("STORAGE_CONTAINER_NAME")
 
 if not all([AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT]):
     logging.error("Azure OpenAI configuration is missing.")
     raise ValueError("Azure OpenAI configuration is incomplete.")
-
 if not SQL_CONNECTION_STRING:
     logging.error("SQL connection string is missing.")
     raise ValueError("SQL configuration is incomplete.")
-
 if not STORAGE_CONNECTION_URL:
     logging.error("Storage connection URL is missing.")
     raise ValueError("Storage configuration is incomplete.")
 
-# Initialize Azure OpenAI Service client with Entra ID authentication
-token_provider = get_bearer_token_provider(  
-    DefaultAzureCredential(),  
-    "https://cognitiveservices.azure.com/.default"  
-)  
+token_provider = get_bearer_token_provider(
+    DefaultAzureCredential(),
+    "https://cognitiveservices.azure.com/.default"
+)
 
 client = AzureOpenAI(
     azure_endpoint=AZURE_OPENAI_ENDPOINT,
-    azure_ad_token_provider=token_provider, 
-#    api_key=AZURE_OPENAI_API_KEY,
+    azure_ad_token_provider=token_provider,
     api_version=AZURE_OPENAI_API_VERSION
 )
 
@@ -55,7 +49,6 @@ blob_service_client = BlobServiceClient(
     account_url=STORAGE_CONNECTION_URL,
     credential=token_credential
 )
-
 
 @app.route(route="processComplaint", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
 def process_complaint(req: func.HttpRequest) -> func.HttpResponse:
@@ -68,6 +61,7 @@ def process_complaint(req: func.HttpRequest) -> func.HttpResponse:
         req_body = req.get_json()
         complaint = req_body.get("complaint")
         findings = req_body.get("findings", "")
+        response_tones = req_body.get("responseTones", [])  # Get array of tones, default to empty list
 
         if not complaint:
             return func.HttpResponse(
@@ -77,14 +71,13 @@ def process_complaint(req: func.HttpRequest) -> func.HttpResponse:
                 headers={"Access-Control-Allow-Origin": "*"}
             )
 
+        # Construct prompt with tones (default to "polite" if none selected)
+        tones = response_tones if response_tones else ["polite"]
+        tone_str = ", ".join(tones)  # Join tones with commas
         response_prompt = (
-            "You are a professional customer service agent. Draft a polite, empathetic, "
-            "and concise response to the customer's complaint based on the provided text "
+            f"You are a professional customer service agent. Draft a {tone_str} "
+            "response to the customer's complaint based on the provided text "
             "and investigation findings."
-        )
-        category_prompt = (
-            "Classify the following complaint into one of these categories: Credit Cards, Channels, Staff, Banking & Savings. "
-            "Return only the category name."
         )
 
         response_messages = [
@@ -102,6 +95,10 @@ def process_complaint(req: func.HttpRequest) -> func.HttpResponse:
         logging.info(f"Generated response length: {len(generated_response)} characters")
         logging.info(f"Generated response: {generated_response}")
 
+        category_prompt = (
+            "Classify the following complaint into one of these categories: Credit Cards, Channels, Staff, Banking & Savings. "
+            "Return only the category name."
+        )
         category_messages = [
             {"role": "system", "content": category_prompt},
             {"role": "user", "content": f"Complaint: {complaint}\nFindings: {findings}"}
@@ -149,6 +146,7 @@ def process_complaint(req: func.HttpRequest) -> func.HttpResponse:
             status_code=500,
             headers={"Access-Control-Allow-Origin": "*"}
         )
+
 
 @app.route(route="saveResponse", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
 def save_response(req: func.HttpRequest) -> func.HttpResponse:
