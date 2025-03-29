@@ -61,7 +61,7 @@ def process_complaint(req: func.HttpRequest) -> func.HttpResponse:
         req_body = req.get_json()
         complaint = req_body.get("complaint")
         findings = req_body.get("findings", "")
-        response_tones = req_body.get("responseTones", [])  # Get array of tones, default to empty list
+        response_tones = req_body.get("responseTones", [])
 
         if not complaint:
             return func.HttpResponse(
@@ -71,9 +71,8 @@ def process_complaint(req: func.HttpRequest) -> func.HttpResponse:
                 headers={"Access-Control-Allow-Origin": "*"}
             )
 
-        # Construct prompt with tones (default to "polite" if none selected)
         tones = response_tones if response_tones else ["polite"]
-        tone_str = ", ".join(tones)  # Join tones with commas
+        tone_str = ", ".join(tones)
         response_prompt = (
             f"You are a professional customer service agent. Draft a {tone_str} "
             "response to the customer's complaint based on the provided text "
@@ -115,14 +114,17 @@ def process_complaint(req: func.HttpRequest) -> func.HttpResponse:
         if category not in valid_categories:
             category = "Banking & Savings"
 
-        result = {"category": category, "response": generated_response}
+        result = {
+            "category": category,
+            "response": generated_response,
+            "prompt": response_prompt  # Return full prompt
+        }
         return func.HttpResponse(
             json.dumps(result),
             mimetype="application/json",
             status_code=200,
             headers={"Access-Control-Allow-Origin": "*"}
         )
-
     except ValueError:
         return func.HttpResponse(
             json.dumps({"error": "Invalid JSON payload."}),
@@ -147,7 +149,6 @@ def process_complaint(req: func.HttpRequest) -> func.HttpResponse:
             headers={"Access-Control-Allow-Origin": "*"}
         )
 
-
 @app.route(route="saveResponse", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
 def save_response(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Saving response and uploading document to database.")
@@ -161,7 +162,9 @@ def save_response(req: func.HttpRequest) -> func.HttpResponse:
         edited_response = req.form.get("editedResponse")
         original_category = req.form.get("originalCategory")
         edited_category = req.form.get("editedCategory")
-        file = req.files.get("document")  # Optional file
+        response_score = req.form.get("responseScore")
+        response_prompt = req.form.get("responsePrompt")  # New field for full prompt
+        file = req.files.get("document")
 
         if not all([original_response, edited_response, original_category, edited_category]):
             return func.HttpResponse(
@@ -171,15 +174,14 @@ def save_response(req: func.HttpRequest) -> func.HttpResponse:
                 headers={"Access-Control-Allow-Origin": "*"}
             )
 
-        # Compute IsCorrectCategory: True if categories match, False otherwise
-        # Handle None (NULL) explicitly to match SQL behavior
         is_correct_category = (original_category == edited_category) if original_category is not None and edited_category is not None else False
+        score_value = int(response_score) if response_score is not None else None
 
         response_id = str(uuid.uuid4())
         document_url = ""
 
         if file:
-            folder_name = response_id  # Use response_id as folder name
+            folder_name = response_id
             blob_name = f"{folder_name}/{file.filename}"
             blob_client = blob_service_client.get_blob_client(container=STORAGE_CONTAINER_NAME, blob=blob_name)
             blob_client.upload_blob(file.read(), overwrite=True)
@@ -192,14 +194,15 @@ def save_response(req: func.HttpRequest) -> func.HttpResponse:
             """
             INSERT INTO ComplaintResponses (
                 ResponseId, Complaint, OriginalResponse, EditedResponse, 
-                OriginalCategory, EditedCategory, DocumentUrl, SavedAt, IsCorrectCategory
+                OriginalCategory, EditedCategory, DocumentUrl, SavedAt, 
+                IsCorrectCategory, ResponseScore, ResponsePrompt
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                response_id, complaint, original_response, edited_response, 
-                original_category, edited_category, document_url, datetime.now(), 
-                is_correct_category  # New column value
+                response_id, complaint, original_response, edited_response,
+                original_category, edited_category, document_url, datetime.now(),
+                is_correct_category, score_value, response_prompt  # New column value
             )
         )
         conn.commit()
@@ -213,7 +216,6 @@ def save_response(req: func.HttpRequest) -> func.HttpResponse:
             status_code=200,
             headers={"Access-Control-Allow-Origin": "*"}
         )
-
     except ValueError:
         return func.HttpResponse(
             json.dumps({"error": "Invalid form data."}),
@@ -237,6 +239,8 @@ def save_response(req: func.HttpRequest) -> func.HttpResponse:
             status_code=500,
             headers={"Access-Control-Allow-Origin": "*"}
         )
+
+# [GetRoles and GetSavedResponses unchanged, omitted for brevity]
 
 @app.route(route="GetRoles", methods=["GET", "POST"], auth_level=func.AuthLevel.ANONYMOUS)
 def get_roles(req: func.HttpRequest) -> func.HttpResponse:
